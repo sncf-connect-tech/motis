@@ -29,7 +29,6 @@
 
 #include "utl/verify.h"
 
-#include "motis/http_req.h"
 #include "motis/types.h"
 
 namespace beast = boost::beast;

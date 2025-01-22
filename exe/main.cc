@@ -1,3 +1,7 @@
+#include "boost/asio/co_spawn.hpp"
+#include "boost/asio/detached.hpp"
+#include "boost/asio/io_context.hpp"
+#include "boost/beast.hpp"
 #include "boost/program_options.hpp"
 
 #include <filesystem>
@@ -9,6 +13,8 @@
 
 #include "motis/config.h"
 #include "motis/data.h"
+#include "motis/http_client.h"
+#include "motis/http_req.h"
 #include "motis/import.h"
 #include "motis/server.h"
 
@@ -21,6 +27,8 @@
 namespace po = boost::program_options;
 using namespace std::string_view_literals;
 namespace fs = std::filesystem;
+
+namespace asio = boost::asio;
 
 namespace motis {
 int generate(int, char**);
@@ -128,6 +136,65 @@ int main(int ac, char** av) {
       } catch (std::exception const& e) {
         fmt::println("unable to import: {}", e.what());
         fmt::println("config:\n{}", fmt::streamed(c));
+        return 1;
+      }
+    }
+
+    case cista::hash("test-http_GET"): {
+      try {
+        asio::io_context ioc;  // The io_context is required for all I/O
+        asio::co_spawn(
+          ioc,
+          []() -> asio::awaitable<void> {
+            fmt::println("Starting coroutine...");
+            auto executor = co_await asio::this_coro::executor;
+            fmt::println("Starting HTTP GET request...");
+            try {
+              auto const res = co_await http_GET(
+                                boost::urls::url{"https://httpbin.org/get"},
+                                headers_t{}, std::chrono::seconds{5});
+              fmt::println("HTTP response body:");
+              std::cout << get_http_body(res) << std::endl;
+            } catch (std::exception const& err) {
+              fmt::println("Coroutine failure: {}", err.what());
+              throw err;
+            }
+            co_return;
+        }, asio::detached);
+        ioc.run();
+        fmt::println("Success!");
+        return 0;
+      } catch (std::exception const& err) {
+        fmt::println("Test failure: {}", err.what());
+        return 1;
+      }
+    }
+
+    case cista::hash("test-http_client"): {
+      try {
+        asio::io_context ioc;  // The io_context is required for all I/O
+        asio::co_spawn(
+          ioc,
+          []() -> asio::awaitable<void> {
+            fmt::println("Starting coroutine...");
+            auto executor = co_await asio::this_coro::executor;
+            http_client client;
+            fmt::println("Starting HTTP GET request...");
+            try {
+              auto const res = co_await client.get(boost::urls::url{"https://httpbin.org/get"}, headers_t{});
+              fmt::println("HTTP response body:");
+              std::cout << get_http_body(res) << std::endl;
+            } catch (std::exception const& err) {
+              fmt::println("Coroutine failure: {}", err.what());
+              throw err;
+            }
+            co_return;
+        }, asio::detached);
+        ioc.run(); // This never returns! O.O
+        fmt::println("Success!");
+        return 0;
+      } catch (std::exception const& err) {
+        fmt::println("Test failure: {}", err.what());
         return 1;
       }
     }
