@@ -77,7 +77,6 @@ timetable:                          # if not set, no timetable will be loaded
           headers:
             Authorization: MY_API_KEY
           protocol: gtfsrt          # specify the real time protocol (default: gtfsrt)
-          proxy: http://proxy.example.com:3128  # optional HTTP/HTTPS proxy (supports authentication: http://user:password@proxy:3128)
     nl:
       path: nl_ovapi.gtfs.zip
       default_bikes_allowed: false
@@ -299,32 +298,6 @@ MOTIS supports multiple protocols for real time feeds. This section shows a list
 | SIRI Lite (XML) | `siri` | Currently limited to SIRI Lite ET, FM and SX. Still work in progress. Use with care. |
 | SIRI Lite (JSON) | `siri_json` | Same as `siri`, but expects JSON server responses. See below for expected JSON structure. |
 | VDV AUS / VDV454 | `auser` | Requires [`auser`](https://github.com/motis-project/auser) for subscription handling |
-
-## Real time feed options
-
-Each real time feed entry supports the following options:
-
-| Option | Required | Description |
-| ---- | ---- | ---- |
-| `url` | ✅ | URL of the real-time feed. HTTP redirects are followed automatically. |
-| `protocol` | ❌ | Real-time protocol to use (default: `gtfsrt`). See table above. |
-| `headers` | ❌ | Map of additional HTTP headers (e.g. `Authorization` for API keys). |
-| `proxy` | ❌ | HTTP/HTTPS proxy URL. Supports authentication via `http://user:password@host:port`. |
-
-Example with all options:
-
-```yaml
-timetable:
-  datasets:
-    my-feed:
-      path: my-feed.gtfs.zip
-      rt:
-        - url: https://api.example.com/gtfs-rt
-          protocol: gtfsrt
-          headers:
-            Authorization: MY_API_KEY
-          proxy: http://user:password@proxy.example.com:3128
-```
 
 ## Supported SIRI Lite services
 
