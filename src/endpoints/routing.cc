@@ -944,7 +944,8 @@ api::plan_response routing::operator()(boost::urls::url_view const& url) const {
                                : std::optional{fastest_direct},
         .fastest_direct_factor_ = query.fastestDirectFactor_,
         .slow_direct_ = query.slowDirect_,
-        .fastest_slow_direct_factor_ = query.fastestSlowDirectFactor_};
+        .fastest_slow_direct_factor_ = query.fastestSlowDirectFactor_,
+        .schedule_routing_ = query.scheduleRouting_};
     remove_slower_than_fastest_direct(q);
     UTL_STOP_TIMING(query_preparation);
 
@@ -975,8 +976,9 @@ api::plan_response routing::operator()(boost::urls::url_view const& url) const {
           q.via_stops_.empty()) {
         try {
           auto raptor_state = n::routing::raptor_state{};
+          auto const rtt_for_routing = q.schedule_routing_ ? nullptr : rtt;
           r = n::routing::pong_search(
-              *tt_, rtt, search_state, raptor_state, q,
+              *tt_, rtt_for_routing, search_state, raptor_state, q,
               query.arriveBy_ ? n::direction::kBackward
                               : n::direction::kForward,
               query.timeout_.has_value() ? std::chrono::seconds{*query.timeout_}

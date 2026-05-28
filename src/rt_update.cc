@@ -63,6 +63,21 @@ std::string get_dump_path(auto&& ep) {
   return fmt::format("dump_rt/{}-{}", ep.tag_, normalize(ep.ep_.url_));
 }
 
+std::optional<proxy> make_proxy(
+    std::optional<std::string> const& proxy_url) {
+  return proxy_url.transform([](std::string const& u) {
+    auto const url = boost::urls::url{u};
+    auto p = proxy{};
+    p.use_tls_ = url.scheme_id() == boost::urls::scheme::https;
+    p.host_ = url.host();
+    p.port_ = url.has_port() ? url.port() : (p.use_tls_ ? "443" : "80");
+    if (url.has_userinfo()) {
+      p.credentials_ = std::string{url.user()} + ":" + std::string{url.password()};
+    }
+    return p;
+  });
+}
+
 struct gtfs_rt_endpoint {
   config::timetable::dataset::rt ep_;
   n::source_idx_t src_;
@@ -206,11 +221,13 @@ void run_rt_update(boost::asio::io_context& ioc, config const& c, data& d) {
                                   [&](gtfs_rt_endpoint const& g)
                                       -> awaitable<void> {
                                     g.metrics_.updates_requested_.Increment();
+                                    auto const proxy =
+                                        make_proxy(g.ep_.proxy_);
                                     try {
                                       auto const res = co_await http_GET(
                                           boost::urls::url{g.ep_.url_},
                                           g.ep_.headers_.value_or(headers_t{}),
-                                          timeout);
+                                          timeout, proxy);
                                       auto const body = get_http_body(res);
                                       if (dump_rt) {
                                         std::ofstream{get_dump_path(g)}.write(
@@ -233,6 +250,8 @@ void run_rt_update(boost::asio::io_context& ioc, config const& c, data& d) {
                                       -> awaitable<void> {
                                     a.metrics_.updates_requested_.Increment();
                                     auto& auser = d.auser_->at(a.ep_.url_);
+                                    auto const proxy =
+                                        make_proxy(a.ep_.proxy_);
                                     try {
                                       auto const fetch_url = boost::urls::url{
                                           auser.fetch_url(a.ep_.url_)};
@@ -241,7 +260,7 @@ void run_rt_update(boost::asio::io_context& ioc, config const& c, data& d) {
                                       auto const res = co_await http_GET(
                                           fetch_url,
                                           a.ep_.headers_.value_or(headers_t{}),
-                                          timeout);
+                                          timeout, proxy);
                                       auto body = get_http_body(res);
                                       if (dump_rt) {
                                         std::ofstream{get_dump_path(a)}.write(

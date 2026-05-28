@@ -68,10 +68,11 @@ struct config {
       struct rt {
         bool operator==(rt const&) const = default;
         cista::hash_t hash() const noexcept {
-          return cista::build_hash(url_, headers_);
+          return cista::build_hash(url_, headers_, proxy_);
         }
         std::string url_;
         std::optional<headers_t> headers_{};
+        std::optional<std::string> proxy_{};
 
         enum struct protocol { gtfsrt, auser, siri, siri_json };
         protocol protocol_{protocol::gtfsrt};
