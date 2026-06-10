@@ -172,6 +172,8 @@ struct gbfs_update {
           p.use_tls_ = url.scheme_id() == boost::urls::scheme::https;
           p.host_ = url.host();
           p.port_ = url.has_port() ? url.port() : (p.use_tls_ ? "443" : "80");
+          p.user_ = url.user();
+          p.password_ = url.password();
           return p;
         })} {}
 

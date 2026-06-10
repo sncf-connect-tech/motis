@@ -130,6 +130,7 @@ struct config {
     unsigned link_stop_distance_{100U};
     unsigned update_interval_{60};
     unsigned http_timeout_{30};
+    std::optional<std::string> proxy_{};
     bool canned_rt_{false};
     bool incremental_rt_update_{false};
     bool use_osm_stop_coordinates_{false};

@@ -19,6 +19,7 @@ using http_response =
 struct proxy {
   bool use_tls_;
   std::string host_, port_;
+  std::string user_, password_;
 };
 
 boost::asio::awaitable<http_response> http_GET(

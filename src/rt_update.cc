@@ -8,6 +8,7 @@
 #include "boost/asio/this_coro.hpp"
 #include "boost/asio/use_awaitable.hpp"
 #include "boost/beast/core/buffers_to_string.hpp"
+#include "boost/url/url.hpp"
 
 #include "utl/read_file.h"
 #include "utl/timer.h"
@@ -95,6 +96,17 @@ awaitable<void> update_rt(config const& c,
 
   // Schedule updates for each real-time endpoint.
   auto const timeout = std::chrono::seconds{c.timetable_->http_timeout_};
+  auto const rt_proxy =
+      c.timetable_->proxy_.transform([](std::string const& u) {
+        auto const url = boost::urls::url{u};
+        auto p = proxy{};
+        p.use_tls_ = url.scheme_id() == boost::urls::scheme::https;
+        p.host_ = url.host();
+        p.port_ = url.has_port() ? url.port() : (p.use_tls_ ? "443" : "80");
+        p.user_ = url.user();
+        p.password_ = url.password();
+        return p;
+      });
 
   using stats_t = std::variant<n::rt::statistics, n::rt::vdv_aus::statistics>;
   if (c.timetable_->canned_rt_) {
@@ -162,7 +174,8 @@ awaitable<void> update_rt(config const& c,
                           try {
                             auto const res = co_await http_GET(
                                 boost::urls::url{g.ep_.url_},
-                                g.ep_.headers_.value_or(headers_t{}), timeout);
+                                g.ep_.headers_.value_or(headers_t{}), timeout,
+                                rt_proxy);
                             auto const body = get_http_body(res);
                             if (dump_rt) {
                               std::ofstream{get_dump_path(g)}.write(
@@ -189,7 +202,7 @@ awaitable<void> update_rt(config const& c,
                                          fetch_url.c_str());
                             auto const res = co_await http_GET(
                                 fetch_url, a.ep_.headers_.value_or(headers_t{}),
-                                timeout);
+                                timeout, rt_proxy);
                             auto body = get_http_body(res);
                             if (dump_rt) {
                               std::ofstream{get_dump_path(a)}.write(

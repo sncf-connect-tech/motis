@@ -17,6 +17,8 @@
 #include "boost/iostreams/filtering_streambuf.hpp"
 #include "boost/url/url.hpp"
 
+#include "net/base64.h"
+
 #include "utl/verify.h"
 
 namespace motis {
@@ -52,7 +54,15 @@ asio::awaitable<http_response> req_no_tls(
   stream.expires_after(timeout);
 
   co_await stream.async_connect(results);
-  co_return co_await req(std::move(stream), url, headers, body);
+
+  auto proxy_headers = headers;
+  if (proxy && !proxy->user_.empty()) {
+    proxy_headers.emplace(
+        "Proxy-Authorization",
+        fmt::format("Basic {}", net::encode_base64(fmt::format(
+                                    "{}:{}", proxy->user_, proxy->password_))));
+  }
+  co_return co_await req(std::move(stream), url, proxy_headers, body);
 }
 
 asio::awaitable<http_response> req_tls(
@@ -69,24 +79,55 @@ asio::awaitable<http_response> req_tls(
 
   auto executor = co_await asio::this_coro::executor;
   auto resolver = asio::ip::tcp::resolver{executor};
-  auto stream = ssl::stream<beast::tcp_stream>{executor, ssl_ctx};
 
-  auto const host = proxy ? proxy->host_ : url.host();
-  auto const port =
-      proxy ? proxy->port_ : std::string{url.has_port() ? url.port() : "443"};
+  auto const target_host = std::string{url.host()};
+  auto const target_port =
+      std::string{url.has_port() ? url.port() : "443"};
+  auto const connect_host = proxy ? proxy->host_ : target_host;
+  auto const connect_port = proxy ? proxy->port_ : target_port;
 
+  auto const results = co_await resolver.async_resolve(
+      connect_host, connect_port,
+      asio::cancel_after(timeout, asio::use_awaitable));
+
+  auto tcp_stream = beast::tcp_stream{executor};
+  tcp_stream.expires_after(timeout);
+  co_await tcp_stream.async_connect(results);
+
+  if (proxy) {
+    // HTTP CONNECT tunnel through proxy.
+    auto connect_req = http::request<http::empty_body>{
+        http::verb::connect,
+        fmt::format("{}:{}", target_host, target_port), 11};
+    connect_req.set(http::field::host,
+                    fmt::format("{}:{}", target_host, target_port));
+    if (!proxy->user_.empty()) {
+      connect_req.set(
+          http::field::proxy_authorization,
+          fmt::format("Basic {}",
+                      net::encode_base64(fmt::format("{}:{}", proxy->user_,
+                                                     proxy->password_))));
+    }
+    co_await http::async_write(tcp_stream, connect_req);
+
+    auto buffer = beast::flat_buffer{};
+    auto parser = http::response_parser<http::empty_body>{};
+    parser.skip(true);
+    co_await http::async_read(tcp_stream, buffer, parser);
+    auto const connect_res = parser.release();
+    if (connect_res.result_int() != 200) {
+      throw utl::fail("proxy CONNECT failed with status {}",
+                      connect_res.result_int());
+    }
+  }
+
+  // Upgrade TCP stream to TLS. SNI must use the target host, not the proxy.
+  auto stream = ssl::stream<beast::tcp_stream>{std::move(tcp_stream), ssl_ctx};
   if (!SSL_set_tlsext_host_name(stream.native_handle(),
-                                const_cast<char*>(host.c_str()))) {
+                                const_cast<char*>(target_host.c_str()))) {
     throw boost::system::system_error{
         {static_cast<int>(::ERR_get_error()), asio::error::get_ssl_category()}};
   }
-
-  auto const results = co_await resolver.async_resolve(
-      host, port, asio::cancel_after(timeout, asio::use_awaitable));
-
-  stream.next_layer().expires_after(timeout);
-
-  co_await beast::get_lowest_layer(stream).async_connect(results);
   co_await stream.async_handshake(ssl::stream_base::client);
   co_return co_await req(std::move(stream), url, headers, body);
 }
