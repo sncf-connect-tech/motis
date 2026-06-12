@@ -33,7 +33,8 @@ asio::awaitable<http_response> req(
     Stream&&,
     boost::urls::url const&,
     std::map<std::string, std::string> const&,
-    std::optional<std::string> const& body = std::nullopt);
+    std::optional<std::string> const& body = std::nullopt,
+    bool use_absolute_url = false);
 
 asio::awaitable<http_response> req_no_tls(
     boost::urls::url const& url,
@@ -62,7 +63,9 @@ asio::awaitable<http_response> req_no_tls(
         fmt::format("Basic {}", net::encode_base64(fmt::format(
                                     "{}:{}", proxy->user_, proxy->password_))));
   }
-  co_return co_await req(std::move(stream), url, proxy_headers, body);
+  // HTTP proxies require absolute-form request target (RFC 7230 §5.3.2).
+  co_return co_await req(std::move(stream), url, proxy_headers, body,
+                         proxy.has_value());
 }
 
 asio::awaitable<http_response> req_tls(
@@ -137,9 +140,12 @@ asio::awaitable<http_response> req(
     Stream&& stream,
     boost::urls::url const& url,
     std::map<std::string, std::string> const& headers,
-    std::optional<std::string> const& body) {
+    std::optional<std::string> const& body,
+    bool const use_absolute_url) {
+  auto const target =
+      use_absolute_url ? std::string{url.c_str()} : std::string{url.encoded_target()};
   auto req = http::request<http::string_body>{
-      body ? http::verb::post : http::verb::get, url.encoded_target(), 11};
+      body ? http::verb::post : http::verb::get, target, 11};
   req.set(http::field::host, url.host());
   req.set(http::field::user_agent, BOOST_BEAST_VERSION_STRING);
   req.set(http::field::accept_encoding, "gzip");
@@ -176,8 +182,7 @@ asio::awaitable<http::response<http::dynamic_body>> http_GET(
   auto next_url = url;
   while (n_redirects < 3U) {
     auto const use_tls =
-        proxy.has_value() ? proxy->use_tls_
-                          : next_url.scheme_id() == boost::urls::scheme::https;
+        next_url.scheme_id() == boost::urls::scheme::https;
     auto const res = co_await (
         use_tls ? req_tls(next_url, headers, std::nullopt, timeout, proxy)
                 : req_no_tls(next_url, headers, std::nullopt, timeout, proxy));
@@ -204,8 +209,7 @@ asio::awaitable<http::response<http::dynamic_body>> http_POST(
   auto next_url = url;
   while (n_redirects < 3U) {
     auto const use_tls =
-        proxy.has_value() ? proxy->use_tls_
-                          : next_url.scheme_id() == boost::urls::scheme::https;
+        next_url.scheme_id() == boost::urls::scheme::https;
     auto const res = co_await (
         use_tls ? req_tls(next_url, headers, body, timeout, proxy)
                 : req_no_tls(next_url, headers, body, timeout, proxy));
